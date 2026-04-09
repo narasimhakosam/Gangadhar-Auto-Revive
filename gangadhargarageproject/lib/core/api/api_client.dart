@@ -6,7 +6,8 @@ class ApiClient {
   late Dio dio;
 
   // Use your local machine IP so it works on both Emulator and Real Devices
-  static const String baseUrl = 'https://gangadhar-auto-revive.onrender.com/';
+  static const String baseUrl =
+      'https://gangadhar-auto-revive.onrender.com/api';
 
   factory ApiClient() {
     return _instance;
