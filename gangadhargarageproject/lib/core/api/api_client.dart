@@ -1,13 +1,13 @@
 import 'package:dio/dio.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
   late Dio dio;
 
-  // Use your local machine IP so it works on both Emulator and Real Devices
-  static const String baseUrl =
-      'https://gangadhar-auto-revive.onrender.com/api';
+  // Uses the URL from the .env file
+  static final String baseUrl = dotenv.get('API_BASE_URL');
 
   factory ApiClient() {
     return _instance;
