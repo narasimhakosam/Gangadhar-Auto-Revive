@@ -6,7 +6,7 @@ import 'core/router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  await dotenv.load(fileName: "assets/config.env");
   runApp(const ProviderScope(child: MyApp()));
 }
 

@@ -5,6 +5,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val keystoreProperties = org.jetbrains.kotlin.konan.properties.Properties()
+val keystorePropertiesFile = rootProject.projectDir.resolve("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(keystorePropertiesFile.inputStream())
+}
+
 android {
     namespace = "com.example.gangadhargarageproject"
     compileSdk = flutter.compileSdkVersion

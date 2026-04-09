@@ -29326,7 +29326,7 @@ var $async$aPM=A.A(function(a,b){if(a===1)return A.B(b,r)
 for(;;)switch(s){case 0:if($.a5==null)A.aAZ()
 $.a5.toString
 s=2
-return A.x($.aVx().Ho(".env"),$async$aPM)
+return A.x($.aVx().Ho("assets/config.env"),$async$aPM)
 case 2:if($.a5==null)A.aAZ()
 q=$.a5
 q.toString
