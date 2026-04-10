@@ -3,9 +3,9 @@ const mongoose = require('mongoose');
 // Vercel Serverless optimizations: cache the database connection
 let isConnected = false; 
 
-const connectDB = async () => {
+const connectDB = async (req, res, next) => {
   if (isConnected) {
-    console.log('Using existing database connection');
+    if (next) return next();
     return;
   }
 
@@ -16,10 +16,11 @@ const connectDB = async () => {
     
     isConnected = conn.connections[0].readyState === 1;
     console.log(`MongoDB Connected: ${conn.connection.host}`);
+    if (next) return next();
   } catch (error) {
     console.error(`MongoDB Connection Error: ${error.message}`);
-    // In serverless environments (like Vercel), we should not call process.exit(1)
-    // as it hard-crashes the entire function instance.
+    // If it fails during a request, send a 500 immediately instead of hanging
+    if (res) return res.status(500).json({ message: 'Database connection failed' });
   }
 };
 

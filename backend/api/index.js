@@ -6,8 +6,8 @@ const connectDB = require('../config/db');
 // Load env vars
 dotenv.config();
 
-// Connect to database
-connectDB();
+// Remove the synchronous top-level call.
+// We will use connectDB as a middleware inside the request lifecycle to ensure it's awaited.
 
 const app = express();
 
@@ -16,6 +16,9 @@ app.use(cors());
 // Increase limit for Base64 images
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Ensure database connection is established BEFORE executing routes
+app.use(connectDB);
 
 // Routes
 app.use('/api/auth', require('../routes/authRoutes'));
