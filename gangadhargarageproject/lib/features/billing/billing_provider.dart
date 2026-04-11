@@ -97,7 +97,8 @@ class BillingService {
         .eq('status', 'Pending');
     
     final now = DateTime.now();
-    final startOfToday = DateTime(now.year, now.month, now.day).toIso8601String();
+    final startOfToday = DateTime(now.year, now.month, now.day).toUtc().toIso8601String();
+    
     final completed = await supabase
         .from('bills')
         .select('total')

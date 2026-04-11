@@ -11,6 +11,13 @@ class VehicleDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Prevent the UUID error by checking if the ID is valid before watching the provider
+    if (vehicleId == 'null' || vehicleId.isEmpty) {
+      return const Scaffold(
+        body: Center(child: Text('Invalid Vehicle ID provided.')),
+      );
+    }
+
     final vehicleAsync = ref.watch(vehicleDetailProvider(vehicleId));
 
     return Scaffold(
@@ -59,7 +66,7 @@ class VehicleDetailScreen extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            vehicle['registrationNumber'],
+            vehicle['registration_number'] ?? 'Unknown',
             style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
@@ -68,9 +75,9 @@ class VehicleDetailScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text('Model: ${vehicle['model'] ?? 'N/A'}', style: const TextStyle(fontSize: 16)),
-          Text('Owner: ${vehicle['ownerName'] ?? 'N/A'}', style: const TextStyle(fontSize: 16)),
-          if (vehicle['ownerPhone'] != null)
-             Text('Phone: ${vehicle['ownerPhone']}', style: const TextStyle(fontSize: 16)),
+          Text('Owner: ${vehicle['owner_name'] ?? 'N/A'}', style: const TextStyle(fontSize: 16)),
+          if (vehicle['owner_phone'] != null)
+             Text('Phone: ${vehicle['owner_phone']}', style: const TextStyle(fontSize: 16)),
         ],
       ),
     );
@@ -83,7 +90,13 @@ class VehicleDetailScreen extends ConsumerWidget {
       itemCount: visits.length,
       itemBuilder: (context, index) {
         final visit = visits[index];
-        final date = DateTime.parse(visit['date']).toLocal();
+        
+        DateTime date;
+        try {
+          date = DateTime.parse(visit['date'] ?? visit['created_at']).toLocal();
+        } catch (_) {
+          date = DateTime.now();
+        }
         final formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(date);
         
         return Card(
@@ -91,37 +104,27 @@ class VehicleDetailScreen extends ConsumerWidget {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           child: ExpansionTile(
             title: Text(formattedDate, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(visit['description']),
+            subtitle: Text(visit['description'] ?? 'No description'),
             children: [
               if (visit['parts'] != null && visit['parts'].isNotEmpty)
                 _buildPartsList(visit['parts']),
-              if (visit['labourCharge'] != null)
+              if (visit['labour_charge'] != null)
                 ListTile(
                   title: const Text('Labour Charge'),
-                  trailing: Text('₹${visit['labourCharge']}'),
+                  trailing: Text('₹${(visit['labour_charge'] as num).toStringAsFixed(2)}'),
                 ),
-              if (visit['bill'] != null)
+              if (visit['bill_id'] != null)
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.picture_as_pdf),
                     label: const Text('View Bill'),
                     onPressed: () {
-                       context.push('/bills/view/${visit['bill']['_id']}');
+                       context.push('/bills/view/${visit['bill_id']}');
                     },
                   ),
                 ),
-              if (visit['images'] != null && visit['images'].isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.image),
-                    label: Text('View ${visit['images'].length} Images'),
-                    onPressed: () {
-                       // context.push('/images/viewer', extra: visit['images']);
-                    },
-                  ),
-                )
+              // Image handling would go here
             ],
           ),
         );
@@ -133,9 +136,9 @@ class VehicleDetailScreen extends ConsumerWidget {
     return Column(
       children: parts.map((part) => ListTile(
         dense: true,
-        title: Text(part['name']),
-        subtitle: Text('Qty: ${part['quantity']} @ ₹${part['unitPrice']}'),
-        trailing: Text('₹${(part['quantity'] * part['unitPrice']).toStringAsFixed(2)}'),
+        title: Text(part['name'] ?? 'Part'),
+        subtitle: Text('Qty: ${part['quantity']} @ ₹${(part['unit_price'] as num).toStringAsFixed(2)}'),
+        trailing: Text('₹${((part['quantity'] as num) * (part['unit_price'] as num)).toStringAsFixed(2)}'),
       )).toList(),
     );
   }

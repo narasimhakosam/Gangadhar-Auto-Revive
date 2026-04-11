@@ -25,20 +25,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> _fetchBills() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final billing = ref.read(billingProvider);
       final pending = await billing.getBillsByStatus('Pending');
       final completed = await billing.getBillsByStatus('Completed');
 
-      setState(() {
-        _pendingBills = pending;
-        _completedBills = completed;
-      });
+      if (mounted) {
+        setState(() {
+          _pendingBills = pending;
+          _completedBills = completed;
+        });
+      }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -53,25 +56,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> _sendMessage(dynamic bill, bool isWhatsApp) async {
-    final phone = bill['vehicle']['ownerPhone'];
+    final vehicle = bill['vehicles'];
+    if (vehicle == null) return;
+
+    final phone = vehicle['owner_phone'];
     if (phone == null || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No phone number found for this vehicle.')));
       return;
     }
 
-    final regNo = bill['vehicle']['registrationNumber'];
-    final total = bill['total'].toStringAsFixed(2);
+    final regNo = vehicle['registration_number'] ?? 'Vehicle';
+    final total = (bill['total'] as num).toStringAsFixed(2);
     final message = "Hello, your vehicle ($regNo) is ready for pickup! Total bill is ₹$total. - Gangadhar Auto Revive";
 
-    // Sanitize phone number (remove all non-digits)
     String cleanPhone = phone.replaceAll(RegExp(r'\D'), '');
-    
-    // If it's 10 digits, add the 91 prefix
-    if (cleanPhone.length == 10) {
-      cleanPhone = '91$cleanPhone';
-    } 
-    // If it has 12 digits and starts with 91, keep it. 
-    // If it's anything else, just use it as is but warn if possible.
+    if (cleanPhone.length == 10) cleanPhone = '91$cleanPhone';
 
     Uri url;
     if (isWhatsApp) {
@@ -83,7 +82,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch messaging app.')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not launch messaging app.')));
     }
   }
 
@@ -116,9 +115,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  Widget _buildBillList(List<dynamic> bills, bool isPending) {
+  Widget _buildBillList(List<dynamic> bills, bool isPendingTab) {
     if (bills.isEmpty) {
-      return Center(child: Text('No ${isPending ? 'pending' : 'completed'} bills found.'));
+      return Center(child: Text('No ${isPendingTab ? 'pending' : 'completed'} bills found.'));
     }
 
     return RefreshIndicator(
@@ -127,15 +126,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         itemCount: bills.length,
         itemBuilder: (context, index) {
           final bill = bills[index];
+          final vehicle = bill['vehicles'] ?? {};
           final isPending = bill['status'] == 'Pending';
           
-          final date = DateTime.parse(bill['createdAt']).toLocal();
+          DateTime date;
+          try {
+            date = DateTime.parse(bill['created_at']).toLocal();
+          } catch (_) {
+            date = DateTime.now();
+          }
           final formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(date);
           
-          String? completedDate;
-          if (bill['completedAt'] != null) {
-            final cDate = DateTime.parse(bill['completedAt']).toLocal();
-            completedDate = DateFormat('dd MMM yyyy, hh:mm a').format(cDate);
+          String? completedDateFormatted;
+          if (bill['completed_at'] != null) {
+            try {
+              final cDate = DateTime.parse(bill['completed_at']).toLocal();
+              completedDateFormatted = DateFormat('dd MMM yyyy, hh:mm a').format(cDate);
+            } catch (_) {}
           }
 
           return Container(
@@ -155,15 +162,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             child: ExpansionTile(
               shape: const RoundedRectangleBorder(side: BorderSide.none),
               collapsedShape: const RoundedRectangleBorder(side: BorderSide.none),
-              title: Text(bill['vehicle']['registrationNumber'], style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white, fontSize: 18)),
+              title: Text(vehicle['registration_number'] ?? 'Unknown', style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.white, fontSize: 18)),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Veh: ${bill['vehicle']['registrationNumber']}'),
                   Text('Created: $formattedDate'),
-                  if (completedDate != null)
-                    Text('Completed: $completedDate', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
-                  Text('Total: ₹${bill['total'].toStringAsFixed(2)}'),
+                  if (completedDateFormatted != null)
+                    Text('Completed: $completedDateFormatted', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                  Text('Total: ₹${(bill['total'] as num).toStringAsFixed(2)}'),
                 ],
               ),
               leading: Icon(
@@ -242,19 +248,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Owner: ${bill['vehicle']['ownerName'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
-                      Text('Phone: ${bill['vehicle']['ownerPhone'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
-                      Text('Model: ${bill['vehicle']['model'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                      Text('Owner: ${vehicle['owner_name'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                      Text('Phone: ${vehicle['owner_phone'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                      Text('Model: ${vehicle['model'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
                       const SizedBox(height: 12),
                       const Divider(),
                       const SizedBox(height: 12),
-                      ...?bill['items']?.map<Widget>((item) => Padding(
+                      ...?bill['bill_items']?.map<Widget>((item) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text('${item['name']} x ${item['quantity']}', style: const TextStyle(fontSize: 15)),
-                            Text('₹${item['totalPrice'].toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w500)),
+                            Text('₹${(item['total_price'] as num).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w500)),
                           ],
                         ),
                       )).toList(),
@@ -266,7 +272,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text('Grand Total', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                            Text('₹${bill['total'].toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.primaryRed)),
+                            Text('₹${(bill['total'] as num).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: AppTheme.primaryRed)),
                           ],
                         ),
                       ),
@@ -293,5 +299,3 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 }
-
-

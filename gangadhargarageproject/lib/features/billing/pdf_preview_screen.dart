@@ -1,3 +1,4 @@
+import 'dart:typed_material';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +14,6 @@ class PdfPreviewScreen extends ConsumerWidget {
   Future<Uint8List> _generatePdf(Map<String, dynamic> bill) async {
     final pdf = pw.Document();
     
-    // Load a font that supports the Rupee symbol
     final fontData = await PdfGoogleFonts.notoSansRegular();
     final fontBoldData = await PdfGoogleFonts.notoSansBold();
     
@@ -22,10 +22,18 @@ class PdfPreviewScreen extends ConsumerWidget {
       bold: fontBoldData,
     );
 
-    final items = List.from(bill['items'] ?? []);
-    final vehicle = bill['vehicle'] ?? {};
-    final date = DateTime.parse(bill['createdAt']).toLocal();
-    final isGstEnabled = bill['isGstEnabled'] ?? false;
+    final items = List.from(bill['bill_items'] ?? []);
+    final vehicle = bill['vehicles'] ?? {};
+    
+    // Safety check for date parsing
+    DateTime date;
+    try {
+      date = DateTime.parse(bill['created_at']).toLocal();
+    } catch (e) {
+      date = DateTime.now();
+    }
+
+    final isGstEnabled = bill['is_gst_enabled'] ?? false;
 
     pdf.addPage(
       pw.Page(
@@ -46,15 +54,16 @@ class PdfPreviewScreen extends ConsumerWidget {
                      crossAxisAlignment: pw.CrossAxisAlignment.start,
                      children: [
                        pw.Text('Bill To:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                       pw.Text('Vehicle No: ${vehicle['registrationNumber']}'),
+                       pw.Text('Vehicle No: ${vehicle['registration_number'] ?? 'N/A'}'),
                        if (vehicle['model'] != null) pw.Text('Model: ${vehicle['model']}'),
-                       if (vehicle['ownerName'] != null) pw.Text('Owner: ${vehicle['ownerName']}'),
-                       if (vehicle['ownerPhone'] != null) pw.Text('Phone: ${vehicle['ownerPhone']}'),
+                       if (vehicle['owner_name'] != null) pw.Text('Owner: ${vehicle['owner_name']}'),
+                       if (vehicle['owner_phone'] != null) pw.Text('Phone: ${vehicle['owner_phone']}'),
                      ]
                    ),
                    pw.Column(
                      crossAxisAlignment: pw.CrossAxisAlignment.end,
                      children: [
+                       pw.Text('Bill No: ${bill['bill_number'] ?? 'N/A'}'),
                        pw.Text('Date: ${date.day}/${date.month}/${date.year}'),
                      ]
                    )
@@ -73,12 +82,12 @@ class PdfPreviewScreen extends ConsumerWidget {
                 data: <List<String>>[
                   <String>['Description', 'Qty', 'Unit Price', 'Total'],
                   ...items.map((item) => [
-                    item['name'],
-                    item['quantity'].toString(),
-                    '₹${item['unitPrice']}',
-                    '₹${item['totalPrice']}'
+                    item['name']?.toString() ?? '',
+                    item['quantity']?.toString() ?? '0',
+                    '₹${(item['unit_price'] as num?)?.toStringAsFixed(2) ?? '0.00'}',
+                    '₹${(item['total_price'] as num?)?.toStringAsFixed(2) ?? '0.00'}'
                   ]),
-                  ['Labour Charge', '', '', '₹${bill['labourCharge']}']
+                  ['Labour Charge', '', '', '₹${(bill['labour_charge'] as num?)?.toStringAsFixed(2) ?? '0.00'}']
                 ],
               ),
               pw.SizedBox(height: 16),
@@ -88,11 +97,11 @@ class PdfPreviewScreen extends ConsumerWidget {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
-                      pw.Text('Subtotal: ₹${bill['subTotal'].toStringAsFixed(2)}'),
+                      pw.Text('Subtotal: ₹${(bill['sub_total'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
                       if (isGstEnabled)
-                        pw.Text('GST (18%): ₹${bill['gstAmount'].toStringAsFixed(2)}'),
+                        pw.Text('GST (18%): ₹${(bill['gst_amount'] as num?)?.toStringAsFixed(2) ?? '0.00'}'),
                       pw.SizedBox(height: 8),
-                      pw.Text('Grand Total: ₹${bill['total'].toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
+                      pw.Text('Grand Total: ₹${(bill['total'] as num?)?.toStringAsFixed(2) ?? '0.00'}', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold, color: PdfColors.red800)),
                     ]
                   )
                 ]
@@ -124,11 +133,11 @@ class PdfPreviewScreen extends ConsumerWidget {
           }
 
           final bill = snapshot.data!;
-          final vehicleNo = bill['vehicle']?['registrationNumber'] ?? 'VEHICLE';
+          final vehicleNo = bill['vehicles']?['registration_number'] ?? 'VEHICLE';
 
           return PdfPreview(
             build: (format) => _generatePdf(bill),
-            pdfFileName: '${vehicleNo}_${billId.substring(18)}.pdf',
+            pdfFileName: '${vehicleNo}_${billId.substring(0, 8)}.pdf',
             canChangeOrientation: false,
             canChangePageFormat: false,
             canDebug: false,

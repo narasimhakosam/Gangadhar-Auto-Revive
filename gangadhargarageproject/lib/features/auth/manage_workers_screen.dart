@@ -60,6 +60,7 @@ class _ManageWorkersScreenState extends ConsumerState<ManageWorkersScreen> {
                   decoration: const InputDecoration(labelText: 'Email Address'),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) => v!.isEmpty ? 'Required field' : null,
+                  enabled: !isEdit, // Email shouldn't be edited for Auth users
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -92,7 +93,7 @@ class _ManageWorkersScreenState extends ConsumerState<ManageWorkersScreen> {
                       bool success;
                       if (isEdit) {
                         success = await ref.read(workerProvider.notifier).updateWorker(
-                          worker['_id'],
+                          worker['id'],
                           _nameCtrl.text,
                           _emailCtrl.text,
                           _selectedRole,
@@ -108,7 +109,7 @@ class _ManageWorkersScreenState extends ConsumerState<ManageWorkersScreen> {
                       }
                       
                       if (!success && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save user. Check if email exists.')));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save worker context. If adding a new worker, use the Supabase Dashboard to create their Auth account with this email first.')));
                       }
                     }
                   },
@@ -129,7 +130,7 @@ class _ManageWorkersScreenState extends ConsumerState<ManageWorkersScreen> {
       builder: (context) => AlertDialog(
         backgroundColor: Theme.of(context).cardTheme.color,
         title: const Text('Delete User?', style: TextStyle(color: AppTheme.white)),
-        content: const Text('Are you sure you want to permanently delete this user?', style: TextStyle(color: Colors.white70)),
+        content: const Text('Are you sure you want to permanently delete this user profile?', style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL')),
           TextButton(
@@ -236,10 +237,10 @@ class _ManageWorkersScreenState extends ConsumerState<ManageWorkersScreen> {
               icon: const Icon(Icons.edit, color: AppTheme.white),
               onPressed: () => _showWorkerDialog(worker: worker),
             ),
-            if (worker['isMainAdmin'] != true)
+            if (worker['is_main_admin'] != true)
               IconButton(
                 icon: const Icon(Icons.delete, color: AppTheme.accentPink),
-                onPressed: () => _deletePrompt(worker['_id']),
+                onPressed: () => _deletePrompt(worker['id']),
               ),
           ],
         ),
