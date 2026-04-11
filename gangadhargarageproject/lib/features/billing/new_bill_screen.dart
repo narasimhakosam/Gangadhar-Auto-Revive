@@ -376,15 +376,25 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
                          ],
                        ),
                        const SizedBox(height: 12),
-                       Text('Date: ${DateFormat('dd MMM yyyy').format(DateTime.parse(_existingVehicle!['visits'][0]['date']).toLocal())}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                       Builder(builder: (context) {
+                         String dateStr = 'N/A';
+                         try {
+                           final raw = _existingVehicle!['visits'][0]['created_at'] ?? _existingVehicle!['visits'][0]['date'];
+                           if (raw != null) {
+                             dateStr = DateFormat('dd MMM yyyy').format(DateTime.parse(raw.toString()).toLocal());
+                           }
+                         } catch (_) {}
+                         return Text('Date: $dateStr', style: TextStyle(color: Colors.white.withOpacity(0.7)));
+                       }),
                        const SizedBox(height: 4),
-                       Text('Work: ${_existingVehicle!['visits'][0]['description']}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                       Text('Work: ${_existingVehicle!['visits'][0]['description'] ?? 'N/A'}', style: TextStyle(color: Colors.white.withOpacity(0.7))),
                      ],
                    ),
                  ),
                ),
                const SizedBox(height: 24),
             ],
+
 
             TextField(
               controller: _descController,

@@ -72,13 +72,16 @@ class _VehicleSearchScreenState extends ConsumerState<VehicleSearchScreen> {
                           child: Icon(Icons.directions_car, color: Colors.white),
                         ),
                         title: Text(
-                          vehicle['registrationNumber'],
+                          vehicle['registration_number'] ?? 'Unknown',
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         subtitle: Text(vehicle['model'] ?? 'Unknown Model'),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          context.push('/vehicles/${vehicle['_id']}');
+                          final id = vehicle['id'];
+                          if (id != null) {
+                            context.push('/vehicles/$id');
+                          }
                         },
                       );
                     },
