@@ -5,7 +5,7 @@ const CACHE_NAME = 'flutter-app-cache';
 
 const RESOURCES = {"assets/AssetManifest.bin": "68ee7e2644a14f9a7d746b06f5760662",
 "assets/AssetManifest.bin.json": "37b5cbc1bfa3541bfb3af6a3403b19bb",
-"assets/assets/config.env": "f4acaa10b6cd751efb3cf7f623e425eb",
+"assets/assets/config.env": "628d311dfeb3863344ca6c6b5ba7c50f",
 "assets/assets/images/car1.png": "c882411c69ce1863b2c8c7227a792cc2",
 "assets/assets/images/car2.png": "5062ed08930299f6178463c9adedb342",
 "assets/assets/images/car3.png": "d7e24ce30a4e76207db8ad52f70b19e2",
@@ -31,7 +31,7 @@ const RESOURCES = {"assets/AssetManifest.bin": "68ee7e2644a14f9a7d746b06f5760662
 "canvaskit/skwasm_heavy.wasm": "b0be7910760d205ea4e011458df6ee01",
 "favicon.png": "73877ee30e69fb66e7311806487f06fb",
 "flutter.js": "24bc71911b75b5f8135c949e27a2984e",
-"flutter_bootstrap.js": "f33e293764deedb79a84f1db2294094c",
+"flutter_bootstrap.js": "7af38b3751c2c74f60ae7fc9bb3a6696",
 "icons/Icon-192.png": "9cf18179b244578079b3a1b0ab954fa7",
 "icons/Icon-512.png": "576ac9f22b01195f97f04a8b046c74fd",
 "icons/Icon-maskable-192.png": "9cf18179b244578079b3a1b0ab954fa7",
