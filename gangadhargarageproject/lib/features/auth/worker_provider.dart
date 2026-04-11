@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/api/api_client.dart';
 
 final workerProvider = StateNotifierProvider<WorkerNotifier, AsyncValue<List<dynamic>>>((ref) {
@@ -23,51 +24,46 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
 
   Future<bool> addWorker(String name, String email, String password, String role) async {
     try {
-      // Save the current admin's email before creating the new user
-      final adminEmail = supabase.auth.currentUser?.email;
-      
-      // Create the new auth user (this will NOT switch session if email confirmation is on)
+      // Save the admin's current session so we can restore it after signUp
+      final adminRefreshToken = supabase.auth.currentSession?.refreshToken;
+
+      // 1. Create the auth user
       final res = await supabase.auth.signUp(
         email: email,
         password: password,
         data: {'name': name, 'role': role},
       );
 
-      // If session was switched to new user, re-login as admin
-      if (supabase.auth.currentUser?.email != adminEmail && adminEmail != null) {
-        // The signUp logged us in as the new user — we cannot recover the admin session
-        // without their password. This is a Supabase client limitation.
-        // The profile was still created via the trigger.
-      }
-
       if (res.user != null) {
+        // 2. Ensure profile exists using the REAL auth user ID
+        //    (in case the database trigger didn't fire)
+        try {
+          await supabase.from('profiles').upsert({
+            'id': res.user!.id,
+            'name': name,
+            'email': email,
+            'role': role,
+          }, onConflict: 'id');
+        } catch (_) {
+          // Profile may already have been created by trigger — that's fine
+        }
+
+        // 3. Restore the admin session (signUp may have swapped it)
+        if (adminRefreshToken != null) {
+          try {
+            await supabase.auth.setSession(adminRefreshToken);
+          } catch (_) {
+            // If restore fails, admin will need to re-login
+          }
+        }
+
         await fetchWorkers();
         return true;
       }
       return false;
     } catch (e) {
-      // If signUp fails (400), fall back to direct profile insertion
-      // This allows adding a profile record even without auth (admin can set up
-      // the auth account later from Supabase Dashboard)
-      try {
-        await supabase.from('profiles').insert({
-          'id': _generateUuid(),
-          'name': name,
-          'email': email,
-          'role': role,
-        });
-        await fetchWorkers();
-        return true;
-      } catch (_) {
-        return false;
-      }
+      return false;
     }
-  }
-
-  /// Generate a simple UUID v4 for profile records created without auth
-  String _generateUuid() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    return '${now.toRadixString(16).padLeft(12, '0')}-0000-4000-8000-${(now ~/ 1000).toRadixString(16).padLeft(12, '0')}';
   }
 
   Future<bool> updateWorker(String id, String name, String email, String role, [String? password]) async {
@@ -76,7 +72,7 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
         'name': name,
         'role': role,
       }).eq('id', id);
-      
+
       await fetchWorkers();
       return true;
     } catch (e) {
