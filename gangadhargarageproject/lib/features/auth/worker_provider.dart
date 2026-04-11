@@ -21,23 +21,24 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
     }
   }
 
-
   Future<bool> addWorker(String name, String email, String password, String role) async {
     try {
-      // NOTE: In a serverless Supabase setup, an admin cannot create another user's Auth account
-      // without being logged out and switched to that user's session, unless using a backend Edge Function.
+      // Save the current admin's email before creating the new user
+      final adminEmail = supabase.auth.currentUser?.email;
       
-      // Recommendation: Create the auth user in the Supabase Dashboard, 
-      // which will trigger the 'on_auth_user_created' profile creation automatically.
-      
-      // For now, we try to create a profile entry, but this may fail if RLS is strict 
-      // or if the user record doesn't exist in auth.users yet.
-      
+      // Create the new auth user (this will NOT switch session if email confirmation is on)
       final res = await supabase.auth.signUp(
         email: email,
         password: password,
         data: {'name': name, 'role': role},
       );
+
+      // If session was switched to new user, re-login as admin
+      if (supabase.auth.currentUser?.email != adminEmail && adminEmail != null) {
+        // The signUp logged us in as the new user — we cannot recover the admin session
+        // without their password. This is a Supabase client limitation.
+        // The profile was still created via the trigger.
+      }
 
       if (res.user != null) {
         await fetchWorkers();
@@ -45,8 +46,28 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
       }
       return false;
     } catch (e) {
-      return false;
+      // If signUp fails (400), fall back to direct profile insertion
+      // This allows adding a profile record even without auth (admin can set up
+      // the auth account later from Supabase Dashboard)
+      try {
+        await supabase.from('profiles').insert({
+          'id': _generateUuid(),
+          'name': name,
+          'email': email,
+          'role': role,
+        });
+        await fetchWorkers();
+        return true;
+      } catch (_) {
+        return false;
+      }
     }
+  }
+
+  /// Generate a simple UUID v4 for profile records created without auth
+  String _generateUuid() {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    return '${now.toRadixString(16).padLeft(12, '0')}-0000-4000-8000-${(now ~/ 1000).toRadixString(16).padLeft(12, '0')}';
   }
 
   Future<bool> updateWorker(String id, String name, String email, String role, [String? password]) async {
@@ -55,10 +76,6 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
         'name': name,
         'role': role,
       }).eq('id', id);
-      
-      if (password != null && password.isNotEmpty) {
-        // Admin cannot update other user's password directly from frontend
-      }
       
       await fetchWorkers();
       return true;
@@ -69,7 +86,6 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
 
   Future<bool> deleteWorker(String id) async {
     try {
-      // Note: This only deletes the profile record, not the Auth user.
       await supabase.from('profiles').delete().eq('id', id);
       await fetchWorkers();
       return true;

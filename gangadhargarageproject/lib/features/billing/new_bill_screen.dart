@@ -242,15 +242,26 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
 
       String billId = widget.billId ?? '';
       if (widget.billId != null) {
-        // Update existing bill
+        // Recalculate totals
+        double partsTotal = processedItems.fold<double>(0, (sum, i) => sum + (i['total_price'] as num));
+        double subTotal = partsTotal;
+        double gstAmount = _isGstEnabled ? subTotal * 0.18 : 0;
+        double grandTotal = subTotal + labour + gstAmount;
+
+        // Update existing bill with recalculated totals
         await supabase.from('bills').update({
           'labour_charge': labour,
+          'sub_total': subTotal,
           'is_gst_enabled': _isGstEnabled,
+          'gst_amount': gstAmount,
+          'total': grandTotal,
         }).eq('id', widget.billId!);
         await supabase.from('bill_items').delete().eq('bill_id', widget.billId!);
-        await supabase.from('bill_items').insert(processedItems.map((i) => {
-          ...i, 'bill_id': widget.billId,
-        }).toList());
+        if (processedItems.isNotEmpty) {
+          await supabase.from('bill_items').insert(processedItems.map((i) => {
+            ...i, 'bill_id': widget.billId,
+          }).toList());
+        }
       } else {
         final success = await billing.createBill(
           vehicleId: vehicleId,
