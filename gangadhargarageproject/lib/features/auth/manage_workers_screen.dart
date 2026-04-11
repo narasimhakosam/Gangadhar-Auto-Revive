@@ -109,7 +109,11 @@ class _ManageWorkersScreenState extends ConsumerState<ManageWorkersScreen> {
                       }
                       
                       if (!success && mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to save worker context. If adding a new worker, use the Supabase Dashboard to create their Auth account with this email first.')));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Failed to save worker. If adding a new worker, please wait a few minutes (Rate Limit) or check the email in the Supabase Dashboard.'),
+                          duration: Duration(seconds: 5),
+                          backgroundColor: Colors.redAccent,
+                        ));
                       }
                     }
                   },
