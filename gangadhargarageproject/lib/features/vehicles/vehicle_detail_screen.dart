@@ -113,14 +113,15 @@ class VehicleDetailScreen extends ConsumerWidget {
                   title: const Text('Labour Charge'),
                   trailing: Text('₹${(visit['labour_charge'] as num).toStringAsFixed(2)}'),
                 ),
-              if (visit['bill_id'] != null)
+              // Bills are joined as a list (bills table has visit_id FK)
+              if (visit['bills'] != null && (visit['bills'] as List).isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.picture_as_pdf),
-                    label: const Text('View Bill'),
+                    label: Text('View Bill (₹${((visit['bills'] as List)[0]['total'] as num).toStringAsFixed(2)})'),
                     onPressed: () {
-                       context.push('/bills/view/${visit['bill_id']}');
+                       context.push('/bills/view/${(visit['bills'] as List)[0]['id']}');
                     },
                   ),
                 ),

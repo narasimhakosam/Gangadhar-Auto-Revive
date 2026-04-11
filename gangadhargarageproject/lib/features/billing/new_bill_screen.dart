@@ -44,12 +44,19 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
       final bill = await billing.getBill(widget.billId!);
       
       setState(() {
+        // The vehicles join now includes 'id'
         _existingVehicle = bill['vehicles'];
         if (_existingVehicle != null) {
           _regNoController.text = _existingVehicle!['registration_number'] ?? '';
           _modelController.text = _existingVehicle!['model'] ?? '';
           _ownerNameController.text = _existingVehicle!['owner_name'] ?? '';
           _phoneController.text = _existingVehicle!['owner_phone'] ?? '';
+        }
+
+        // Load description from the visit join
+        final visit = bill['visits'];
+        if (visit != null && visit is Map) {
+          _descController.text = visit['description'] ?? '';
         }
 
         final items = bill['bill_items'] as List? ?? [];
@@ -72,6 +79,7 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
 
   void _addPart() {
     _partDialog();

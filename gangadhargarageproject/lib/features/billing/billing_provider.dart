@@ -57,7 +57,8 @@ class BillingService {
         .from('bills')
         .select('''
           *,
-          vehicles ( registration_number, model, owner_name, owner_phone ),
+          vehicles ( id, registration_number, model, owner_name, owner_phone ),
+          visits ( id, description, labour_charge ),
           bill_items ( * )
         ''')
         .eq('id', id)
@@ -70,7 +71,7 @@ class BillingService {
         .from('bills')
         .select('''
           *,
-          vehicles ( registration_number, model, owner_name, owner_phone ),
+          vehicles ( id, registration_number, model, owner_name, owner_phone ),
           bill_items ( * )
         ''')
         .eq('status', status)

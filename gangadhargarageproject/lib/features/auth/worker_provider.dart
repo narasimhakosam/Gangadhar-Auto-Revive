@@ -13,12 +13,14 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
       final data = await supabase
           .from('profiles')
           .select()
+          .neq('is_main_admin', true)
           .order('name', ascending: true);
       state = AsyncValue.data(data as List<dynamic>);
     } catch (e, st) {
       state = AsyncValue.error(e, st);
     }
   }
+
 
   Future<bool> addWorker(String name, String email, String password, String role) async {
     try {
