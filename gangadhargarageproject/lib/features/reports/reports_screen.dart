@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../../core/api/api_client.dart';
+import '../billing/billing_provider.dart';
 import '../../core/theme/app_theme.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -27,15 +27,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Future<void> _fetchBills() async {
     setState(() => _isLoading = true);
     try {
-      final resPending = await apiClient.get('/billing', queryParameters: {'status': 'Pending'});
-      final resCompleted = await apiClient.get('/billing', queryParameters: {'status': 'Completed'});
+      final billing = ref.read(billingProvider);
+      final pending = await billing.getBillsByStatus('Pending');
+      final completed = await billing.getBillsByStatus('Completed');
 
       setState(() {
-        _pendingBills = resPending.data;
-        _completedBills = resCompleted.data;
+        _pendingBills = pending;
+        _completedBills = completed;
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       setState(() => _isLoading = false);
     }
@@ -43,10 +44,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   Future<void> _updateStatus(String id, String status) async {
     try {
-      await apiClient.patch('/billing/$id/status', data: {'status': status});
+      final billing = ref.read(billingProvider);
+      await billing.updateBillStatus(id, status);
       _fetchBills();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -175,8 +177,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     IconButton(
                       icon: const Icon(Icons.edit, color: AppTheme.white),
                       onPressed: () async {
-                        await context.push('/bills/edit/${bill['_id']}');
-                        _fetchBills(); // Refresh data after returning from edit
+                        await context.push('/bills/edit/${bill['id']}');
+                        _fetchBills();
                       },
                     ),
                     IconButton(
@@ -220,7 +222,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ] else ...[
                      IconButton(
                        icon: const Icon(Icons.visibility, color: AppTheme.primaryRed),
-                       onPressed: () => context.push('/bills/view/${bill['_id']}'),
+                       onPressed: () => context.push('/bills/view/${bill['id']}'),
                      ),
                   ],
                   Chip(
@@ -273,7 +275,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: () => _updateStatus(bill['_id'], 'Completed'),
+                            onPressed: () => _updateStatus(bill['id'], 'Completed'),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppTheme.primaryRed,
                             ),

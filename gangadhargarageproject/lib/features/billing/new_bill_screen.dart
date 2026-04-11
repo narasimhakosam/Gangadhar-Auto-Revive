@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/theme/app_theme.dart';
-
+import '../auth/auth_provider.dart';
+import 'billing_provider.dart';
 
 import 'package:intl/intl.dart';
 
@@ -39,38 +40,34 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
   Future<void> _fetchBillData() async {
     setState(() => _isLoading = true);
     try {
-      final res = await apiClient.get('/billing/${widget.billId}');
-      final bill = res.data;
+      final billing = ref.read(billingProvider);
+      final bill = await billing.getBill(widget.billId!);
       
       setState(() {
-        _existingVehicle = bill['vehicle'];
+        _existingVehicle = bill['vehicles'];
         if (_existingVehicle != null) {
-          _regNoController.text = _existingVehicle!['registrationNumber'] ?? '';
+          _regNoController.text = _existingVehicle!['registration_number'] ?? '';
           _modelController.text = _existingVehicle!['model'] ?? '';
-          _ownerNameController.text = _existingVehicle!['ownerName'] ?? '';
-          _phoneController.text = _existingVehicle!['ownerPhone'] ?? '';
+          _ownerNameController.text = _existingVehicle!['owner_name'] ?? '';
+          _phoneController.text = _existingVehicle!['owner_phone'] ?? '';
         }
 
-        if (bill['visit'] != null && bill['visit'] is Map) {
-          _descController.text = (bill['visit'] as Map)['description'] ?? '';
-        }
-
-        final items = bill['items'] as List? ?? [];
+        final items = bill['bill_items'] as List? ?? [];
         _parts = items.map<Map<String, dynamic>>((item) {
-          final mappedItem = item as Map<String, dynamic>;
+          final m = item as Map<String, dynamic>;
           return {
-            'name': mappedItem['name'] ?? 'Part',
-            'quantity': mappedItem['quantity'] ?? 1,
-            'unitPrice': (mappedItem['unitPrice'] as num?)?.toDouble() ?? 0.0,
+            'name': m['name'] ?? 'Part',
+            'quantity': m['quantity'] ?? 1,
+            'unitPrice': (m['unit_price'] as num?)?.toDouble() ?? 0.0,
           };
         }).toList();
 
-        _labourController.text = (bill['labourCharge'] as num?)?.toString() ?? '0';
-        _isGstEnabled = bill['isGstEnabled'] ?? true;
+        _labourController.text = (bill['labour_charge'] as num?)?.toString() ?? '0';
+        _isGstEnabled = bill['is_gst_enabled'] ?? true;
       });
     } catch (e) {
       debugPrint('Error loading bill: $e');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading bill: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error loading bill: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -142,28 +139,34 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
   double get _total => _subtotal + _gst;
 
   Future<void> _fetchVehicleDetails(String regNo) async {
-     try {
-        final res = await apiClient.get('/vehicles', queryParameters: {'search': regNo});
-        final List matches = res.data;
-        final exact = matches.where((v) => v['registrationNumber'].toString().toUpperCase() == regNo.toUpperCase()).toList();
-        
-        if (exact.isNotEmpty) {
-          final vehicleRes = await apiClient.get('/vehicles/${exact[0]['_id']}');
-          final v = vehicleRes.data;
-          setState(() {
-            _existingVehicle = v;
-            _modelController.text = v['model'] ?? '';
-            _ownerNameController.text = v['ownerName'] ?? '';
-            _phoneController.text = v['ownerPhone'] ?? '';
-          });
-        } else {
-          setState(() {
-            _existingVehicle = null;
-          });
-        }
-     } catch (e) {
-       debugPrint('Error fetching details: $e');
-     }
+    try {
+      final data = await supabase
+          .from('vehicles')
+          .select('''
+            *,
+            visits (
+              id, date, description,
+              parts ( * )
+            )
+          ''')
+          .ilike('registration_number', regNo)
+          .limit(1);
+
+      final List results = data as List;
+      if (results.isNotEmpty) {
+        final v = results[0] as Map<String, dynamic>;
+        setState(() {
+          _existingVehicle = v;
+          _modelController.text = v['model'] ?? '';
+          _ownerNameController.text = v['owner_name'] ?? '';
+          _phoneController.text = v['owner_phone'] ?? '';
+        });
+      } else {
+        setState(() => _existingVehicle = null);
+      }
+    } catch (e) {
+      debugPrint('Error fetching vehicle: $e');
+    }
   }
 
   Future<void> _submit() async {
@@ -175,71 +178,103 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Find or create/update vehicle
       final regNo = _regNoController.text.trim().toUpperCase();
+      final labour = double.tryParse(_labourController.text) ?? 0;
       String vehicleId;
-      
+
       final vehicleData = {
-        'registrationNumber': regNo,
+        'registration_number': regNo,
         'model': _modelController.text.trim(),
-        'ownerName': _ownerNameController.text.trim(),
-        'ownerPhone': _phoneController.text.trim(),
+        'owner_name': _ownerNameController.text.trim(),
+        'owner_phone': _phoneController.text.trim(),
       };
 
+      // 1. Create or update vehicle
       if (_existingVehicle != null) {
-        vehicleId = _existingVehicle!['_id'];
-        await apiClient.put('/vehicles/$vehicleId', data: vehicleData);
+        vehicleId = _existingVehicle!['id'];
+        await supabase.from('vehicles').update({
+          'model': vehicleData['model'],
+          'owner_name': vehicleData['owner_name'],
+          'owner_phone': vehicleData['owner_phone'],
+        }).eq('id', vehicleId);
       } else {
-        final createRes = await apiClient.post('/vehicles', data: vehicleData);
-        vehicleId = createRes.data['_id'];
+        final row = await supabase.from('vehicles').upsert(vehicleData).select().single();
+        vehicleId = row['id'];
       }
 
-      // 2. Add visit
-      final labour = double.tryParse(_labourController.text) ?? 0;
-      final visitRes = await apiClient.post('/vehicles/$vehicleId/visits', data: {
-        'description': _descController.text,
-        'parts': _parts,
-        'labourCharge': labour,
-      });
-      final visitId = visitRes.data['_id'];
+      // 2. Create visit
+      final workerId = supabase.auth.currentUser?.id;
+      final visitRow = await supabase.from('visits').insert({
+        'vehicle_id': vehicleId,
+        'worker_id': workerId,
+        'description': _descController.text.trim(),
+        'labour_charge': labour,
+      }).select().single();
+      final visitId = visitRow['id'];
 
-      // 3. Create or Update Bill
-      dynamic billRes;
+      // 3. Create visit parts
+      if (_parts.isNotEmpty) {
+        final partsData = _parts.map((p) => {
+          'visit_id': visitId,
+          'name': p['name'],
+          'quantity': p['quantity'],
+          'unit_price': p['unitPrice'],
+        }).toList();
+        await supabase.from('parts').insert(partsData);
+      }
+
+      // 4. Create bill using BillingService
+      final billing = ref.read(billingProvider);
+      final processedItems = _parts.map((p) => {
+        'name': p['name'],
+        'quantity': p['quantity'],
+        'unit_price': (p['unitPrice'] as num).toDouble(),
+        'total_price': (p['quantity'] as int) * (p['unitPrice'] as double),
+      }).toList();
+
+      String billId = widget.billId ?? '';
       if (widget.billId != null) {
-        billRes = await apiClient.put('/billing/${widget.billId}', data: {
-          'items': processedItemsForBill(),
-          'labourCharge': labour,
-          'isGstEnabled': _isGstEnabled,
-          'description': _descController.text.trim()
-        });
+        // Update existing bill
+        await supabase.from('bills').update({
+          'labour_charge': labour,
+          'is_gst_enabled': _isGstEnabled,
+        }).eq('id', widget.billId!);
+        await supabase.from('bill_items').delete().eq('bill_id', widget.billId!);
+        await supabase.from('bill_items').insert(processedItems.map((i) => {
+          ...i, 'bill_id': widget.billId,
+        }).toList());
       } else {
-        billRes = await apiClient.post('/billing', data: {
-          'vehicleId': vehicleId,
-          'visitId': visitId,
-          'items': processedItemsForBill(),
-          'labourCharge': labour,
-          'isGstEnabled': _isGstEnabled
-        });
+        final success = await billing.createBill(
+          vehicleId: vehicleId,
+          visitId: visitId,
+          workerId: workerId,
+          items: processedItems,
+          labourCharge: labour,
+          isGstEnabled: _isGstEnabled,
+        );
+        if (!success) throw Exception('Bill creation failed');
+        // Get the latest bill for this vehicle to navigate to it
+        final latestBill = await supabase
+            .from('bills')
+            .select('id')
+            .eq('vehicle_id', vehicleId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .single();
+        billId = latestBill['id'];
       }
 
       if (mounted) {
-         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.billId != null ? 'Bill updated!' : 'Bill created!')));
-         context.replace('/bills/view/${billRes.data['_id']}');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(widget.billId != null ? 'Bill updated!' : 'Bill created!'),
+        ));
+        context.replace('/bills/view/$billId');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  List<Map<String, dynamic>> processedItemsForBill() {
-    return _parts.map((p) => {
-      'name': p['name'],
-      'quantity': p['quantity'],
-      'unitPrice': p['unitPrice'],
-      'totalPrice': (p['quantity'] as int) * (p['unitPrice'] as double)
-    }).toList();
   }
 
   @override
@@ -254,18 +289,21 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Autocomplete<Map<String, dynamic>>(
-              displayStringForOption: (option) => option['registrationNumber'],
+              displayStringForOption: (option) => option['registration_number'] ?? '',
               optionsBuilder: (textEditingValue) async {
                 if (textEditingValue.text.isEmpty) return const Iterable.empty();
-                final res = await apiClient.get('/vehicles', queryParameters: {'search': textEditingValue.text});
-                return (res.data as List).cast<Map<String, dynamic>>();
+                final data = await supabase
+                    .from('vehicles')
+                    .select('id, registration_number, model, owner_name, owner_phone')
+                    .ilike('registration_number', '%${textEditingValue.text}%')
+                    .limit(10);
+                return (data as List).cast<Map<String, dynamic>>();
               },
               onSelected: (option) {
-                _regNoController.text = option['registrationNumber'];
-                _fetchVehicleDetails(option['registrationNumber']);
+                _regNoController.text = option['registration_number'];
+                _fetchVehicleDetails(option['registration_number']);
               },
               fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                // Sync with our controller
                 if (controller.text != _regNoController.text && _regNoController.text.isNotEmpty) {
                    controller.text = _regNoController.text;
                 }
@@ -407,7 +445,6 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
               child: SwitchListTile(
                 title: const Text('Apply 18% GST', style: TextStyle(fontWeight: FontWeight.w600)),
                 value: _isGstEnabled,
-                activeColor: AppTheme.accentPink,
                 onChanged: (val) => setState(() => _isGstEnabled = val),
               ),
             ),
@@ -454,4 +491,3 @@ class _NewBillScreenState extends ConsumerState<NewBillScreen> {
     );
   }
 }
-

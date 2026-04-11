@@ -1,6 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/api/api_client.dart';
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
@@ -10,72 +9,71 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
 class AuthState {
   final bool isLoading;
   final String? error;
-  final Map<String, dynamic>? user;
+  final User? user;
+  final Map<String, dynamic>? profile;
 
-  AuthState({this.isLoading = false, this.error, this.user});
+  AuthState({this.isLoading = false, this.error, this.user, this.profile});
 
-  AuthState copyWith({bool? isLoading, String? error, Map<String, dynamic>? user}) {
+  AuthState copyWith({bool? isLoading, String? error, User? user, Map<String, dynamic>? profile}) {
     return AuthState(
       isLoading: isLoading ?? this.isLoading,
       error: error,
       user: user ?? this.user,
+      profile: profile ?? this.profile,
     );
   }
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
   AuthNotifier() : super(AuthState()) {
-    _loadUser();
+    _loadSession();
   }
 
-  Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('auth_token');
-    if (token != null) {
-      try {
-        final response = await apiClient.get('/auth/profile');
-        state = state.copyWith(user: response.data);
-      } catch (e) {
-        await logout();
-      }
+  Future<void> _loadSession() async {
+    final session = supabase.auth.currentSession;
+    if (session != null) {
+      await _loadProfile(session.user);
+    }
+  }
+
+  Future<void> _loadProfile(User user) async {
+    try {
+      final data = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', user.id)
+          .single();
+      state = state.copyWith(user: user, profile: data);
+    } catch (_) {
+      // Profile may not exist yet; ignore
     }
   }
 
   Future<bool> login(String email, String password) async {
     state = state.copyWith(isLoading: true, error: null);
     try {
-      final response = await apiClient.post('/auth/login', data: {
-        'email': email,
-        'password': password,
-      });
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('auth_token', response.data['token']);
-      await prefs.setString('user_role', response.data['role']);
-      await prefs.setString('user_name', response.data['name']);
-
-      state = state.copyWith(isLoading: false, user: response.data);
-      return true;
-    } on DioException catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: e.response?.data['message'] ?? 'Login failed. Please try again.',
+      final response = await supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
       );
+      await _loadProfile(response.user!);
+      state = state.copyWith(isLoading: false);
+      return true;
+    } on AuthException catch (e) {
+      state = state.copyWith(isLoading: false, error: e.message);
       return false;
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'An unexpected error occurred.',
-      );
+      state = state.copyWith(isLoading: false, error: 'An unexpected error occurred.');
       return false;
     }
   }
 
   Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('auth_token');
-    await prefs.remove('user_role');
-    await prefs.remove('user_name');
+    await supabase.auth.signOut();
     state = AuthState();
   }
+
+  String? get role => state.profile?['role'] as String?;
+  String? get userName => state.profile?['name'] as String?;
+  bool get isLoggedIn => supabase.auth.currentSession != null;
 }

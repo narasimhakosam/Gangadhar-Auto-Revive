@@ -13,21 +13,35 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
   Future<void> fetchWorkers() async {
     state = const AsyncValue.loading();
     try {
-      final res = await apiClient.get('/auth');
-      state = AsyncValue.data(res.data as List<dynamic>);
-    } catch (e) {
-      state = AsyncValue.error(e, StackTrace.current);
+      // Fetch all non-main-admin profiles from the database
+      final data = await supabase
+          .from('profiles')
+          .select()
+          .eq('is_main_admin', false)
+          .order('created_at', ascending: false);
+      state = AsyncValue.data(data as List<dynamic>);
+    } catch (e, st) {
+      state = AsyncValue.error(e, st);
     }
   }
 
   Future<bool> addWorker(String name, String email, String password, String role) async {
     try {
-      await apiClient.post('/auth/register', data: {
+      // 1. Create the auth user via admin API (handled by Supabase Edge Function or signUp)
+      final response = await supabase.auth.signUp(
+        email: email,
+        password: password,
+      );
+      if (response.user == null) return false;
+
+      // 2. Create the profile record
+      await supabase.from('profiles').insert({
+        'id': response.user!.id,
         'name': name,
         'email': email,
-        'password': password,
         'role': role,
       });
+      
       await fetchWorkers();
       return true;
     } catch (e) {
@@ -37,16 +51,12 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
 
   Future<bool> updateWorker(String id, String name, String email, String role, String? password) async {
     try {
-      final data = {
+      await supabase.from('profiles').update({
         'name': name,
         'email': email,
         'role': role,
-      };
-      if (password != null && password.isNotEmpty) {
-        data['password'] = password;
-      }
+      }).eq('id', id);
       
-      await apiClient.put('/auth/$id', data: data);
       await fetchWorkers();
       return true;
     } catch (e) {
@@ -56,7 +66,8 @@ class WorkerNotifier extends StateNotifier<AsyncValue<List<dynamic>>> {
 
   Future<bool> deleteWorker(String id) async {
     try {
-      await apiClient.delete('/auth/$id');
+      // Delete the profile (cascade will handle associated records)
+      await supabase.from('profiles').delete().eq('id', id);
       await fetchWorkers();
       return true;
     } catch (e) {

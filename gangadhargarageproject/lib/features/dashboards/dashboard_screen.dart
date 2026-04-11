@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../auth/auth_provider.dart';
+import '../billing/billing_provider.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/api/api_client.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -14,31 +13,20 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  String? _role;
-  String? _userName;
   Map<String, dynamic>? _stats;
 
   @override
-
   void initState() {
     super.initState();
-    _loadRole();
     _fetchStats();
-  }
-
-  Future<void> _loadRole() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _role = prefs.getString('user_role');
-      _userName = prefs.getString('user_name');
-    });
   }
 
   Future<void> _fetchStats() async {
     try {
-      final res = await apiClient.get('/billing/stats');
+      final billing = ref.read(billingProvider);
+      final stats = await billing.getStats();
       setState(() {
-        _stats = res.data;
+        _stats = stats;
       });
     } catch (e) {
       debugPrint('Error fetching stats: $e');
@@ -54,11 +42,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_role == null) {
+    ref.watch(authProvider);
+    final role = ref.read(authProvider.notifier).role;
+    final userName = ref.read(authProvider.notifier).userName;
+
+    if (role == null) {
        return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    if (_role != 'Admin' && _role != 'Worker') {
+    if (role != 'Admin' && role != 'Worker') {
       return Scaffold(
         appBar: AppBar(title: const Text('Access Denied')),
         body: Center(
@@ -93,11 +85,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _userName ?? 'User',
+                  userName ?? 'User',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  _role ?? '',
+                  role,
                   style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.normal),
                 ),
               ],
@@ -128,15 +120,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (_role == 'Admin' || _role == 'Worker') ...[
-                        _buildStatsRow(isDesktop),
+                      if (role == 'Admin' || role == 'Worker') ...[
+                        _buildStatsRow(role, isDesktop),
                         const SizedBox(height: 24),
                       ],
                       
                       if (isDesktop) 
-                        _buildDesktopGrid()
+                        _buildDesktopGrid(role)
                       else
-                        _buildMobileColumn(),
+                        _buildMobileColumn(role),
                     ],
                   ),
                 ),
@@ -148,7 +140,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildMobileColumn() {
+  Widget _buildMobileColumn(String role) {
     return Column(
       children: [
         _buildActionCard(
@@ -162,7 +154,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           icon: Icons.directions_car,
           onTap: () => context.push('/vehicles'),
         ),
-        if (_role == 'Admin' || _role == 'Worker') ...[
+        ...[
           const SizedBox(height: 16),
           _buildActionCard(
             title: 'Business Reports',
@@ -170,7 +162,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             onTap: () => context.push('/reports'),
           ),
         ],
-        if (_role == 'Admin') ...[
+        if (role == 'Admin') ...[
           const SizedBox(height: 16),
           _buildActionCard(
             title: 'Manage Workers',
@@ -182,7 +174,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildDesktopGrid() {
+  Widget _buildDesktopGrid(String role) {
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -201,13 +193,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           icon: Icons.directions_car,
           onTap: () => context.push('/vehicles'),
         ),
-        if (_role == 'Admin' || _role == 'Worker')
-          _buildActionCard(
-            title: 'Business Reports',
-            icon: Icons.bar_chart,
-            onTap: () => context.push('/reports'),
-          ),
-        if (_role == 'Admin')
+        _buildActionCard(
+          title: 'Business Reports',
+          icon: Icons.bar_chart,
+          onTap: () => context.push('/reports'),
+        ),
+        if (role == 'Admin')
           _buildActionCard(
             title: 'Manage Workers',
             icon: Icons.group,
@@ -217,7 +208,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
-  Widget _buildStatsRow(bool isDesktop) {
+  Widget _buildStatsRow(String role, bool isDesktop) {
     final pending = _stats?['Pending']?['total'] ?? 0.0;
     final todayReceived = _stats?['TodayReceived']?['total'] ?? 0.0;
     
@@ -226,13 +217,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
         Expanded(
           child: _buildStatCard(
             'Total Pending', 
-            '₹${pending.toStringAsFixed(2)}', 
+            '₹${(pending as num).toStringAsFixed(2)}', 
             Colors.orange, 
             Icons.hourglass_empty,
             isDesktop
           ),
         ),
-        if (_role == 'Admin') ...[
+        if (role == 'Admin') ...[
           const SizedBox(width: 16),
           Expanded(
             child: _buildStatCard(

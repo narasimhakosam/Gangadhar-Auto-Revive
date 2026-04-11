@@ -1,6 +1,6 @@
 
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../features/auth/login_screen.dart';
 import '../../features/dashboards/dashboard_screen.dart';
@@ -18,8 +18,9 @@ class AppRouter {
   static final router = GoRouter(
     initialLocation: '/splash',
     redirect: (context, state) async {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('auth_token');
+      // Use Supabase session instead of SharedPreferences token
+      final session = Supabase.instance.client.auth.currentSession;
+      final isLoggedIn = session != null;
       
       final isSplash = state.matchedLocation == '/splash';
       final isOnboarding = state.matchedLocation == '/onboarding';
@@ -31,17 +32,18 @@ class AppRouter {
       }
 
       // Standard auth redirect for protected routes
-      if (token == null && !isLoggingIn) {
+      if (!isLoggedIn && !isLoggingIn) {
         return '/login';
       }
       
       // If logged in but trying to access login page, redirect to dashboard
-      if (token != null && isLoggingIn) {
+      if (isLoggedIn && isLoggingIn) {
         return '/dashboard';
       }
       
       return null;
     },
+
     routes: [
 
       GoRoute(

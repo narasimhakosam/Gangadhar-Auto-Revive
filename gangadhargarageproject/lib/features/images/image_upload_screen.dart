@@ -1,13 +1,14 @@
-import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/api/api_client.dart';
 import '../../core/theme/app_theme.dart';
 
 class ImageUploadScreen extends StatefulWidget {
   final String vehicleId;
-  final String? visitId; 
+  final String? visitId;
   const ImageUploadScreen({super.key, required this.vehicleId, this.visitId});
 
   @override
@@ -19,7 +20,7 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
   XFile? _selectedImage;
   bool _isCompressing = false;
   bool _isUploading = false;
-  String? _compressedBase64;
+  Uint8List? _compressedBytes;
 
   Future<void> _pickImage(ImageSource source) async {
     try {
@@ -30,42 +31,57 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
           _isCompressing = true;
         });
 
-        final compressedBytes = await FlutterImageCompress.compressWithFile(
+        final compressed = await FlutterImageCompress.compressWithFile(
           picked.path,
           minWidth: 800,
           minHeight: 800,
           quality: 80,
         );
 
-        if (compressedBytes != null) {
+        if (compressed != null) {
           setState(() {
-            _compressedBase64 = base64Encode(compressedBytes);
+            _compressedBytes = Uint8List.fromList(compressed);
             _isCompressing = false;
           });
         }
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
   Future<void> _upload() async {
-    if (_compressedBase64 == null) return;
-    
+    if (_compressedBytes == null || _selectedImage == null) return;
+
     setState(() => _isUploading = true);
     try {
-      await apiClient.post('/images', data: {
-        'vehicleId': widget.vehicleId,
-        if (widget.visitId != null) 'visitId': widget.visitId,
-        'base64Data': _compressedBase64,
-      });
+      final ext = _selectedImage!.path.split('.').last.toLowerCase();
+      final fileName = '${widget.vehicleId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final filePath = '${widget.vehicleId}/$fileName';
+
+      // Upload binary directly to Supabase Storage — NO Base64 overhead
+      await supabase.storage.from('vehicle_images').uploadBinary(
+        filePath,
+        _compressedBytes!,
+        fileOptions: FileOptions(contentType: 'image/$ext'),
+      );
+
+      // Get public URL and save reference to database
+      final imageUrl = supabase.storage.from('vehicle_images').getPublicUrl(filePath);
+
+      if (widget.visitId != null) {
+        await supabase.from('visit_images').insert({
+          'visit_id': widget.visitId,
+          'image_url': imageUrl,
+        });
+      }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Image uploaded successfully!')));
-        Navigator.pop(context); // Go back after upload
+        Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Upload failed')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Upload failed: $e')));
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
@@ -79,56 +95,52 @@ class _ImageUploadScreenState extends State<ImageUploadScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-             Row(
-               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-               children: [
-                 ElevatedButton.icon(
-                   onPressed: () => _pickImage(ImageSource.camera),
-                   icon: const Icon(Icons.camera_alt),
-                   label: const Text('Camera'),
-                 ),
-                 ElevatedButton.icon(
-                   onPressed: () => _pickImage(ImageSource.gallery),
-                   icon: const Icon(Icons.photo_library),
-                   label: const Text('Gallery'),
-                 )
-               ],
-             ),
-             const SizedBox(height: 32),
-             if (_isCompressing)
-               const Column(
-                 children: [
-                   CircularProgressIndicator(),
-                   SizedBox(height: 16),
-                   Text('Compressing Image...'),
-                 ]
-               ),
-             if (_selectedImage != null && _compressedBase64 == null && !_isCompressing)
-               const CircularProgressIndicator(),
-             if (_compressedBase64 != null)
-               Column(
-                 children: [
-                   Image.memory(
-                     base64Decode(_compressedBase64!),
-                     height: 300,
-                     fit: BoxFit.contain,
-                   ),
-                   const SizedBox(height: 32),
-                   SizedBox(
-                     width: double.infinity,
-                     child: ElevatedButton(
-                       style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryRed),
-                       onPressed: _isUploading ? null : _upload,
-                       child: _isUploading
-                           ? const CircularProgressIndicator(color: Colors.white)
-                           : const Text('UPLOAD IMAGE', style: TextStyle(color: Colors.white)),
-                     ),
-                   )
-                 ]
-               )
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _pickImage(ImageSource.camera),
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('Camera'),
+                ),
+                ElevatedButton.icon(
+                  onPressed: () => _pickImage(ImageSource.gallery),
+                  icon: const Icon(Icons.photo_library),
+                  label: const Text('Gallery'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 32),
+            if (_isCompressing)
+              const Column(children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Compressing Image...'),
+              ]),
+            if (_compressedBytes != null)
+              Column(
+                children: [
+                  Image.memory(
+                    _compressedBytes!,
+                    height: 300,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryRed),
+                      onPressed: _isUploading ? null : _upload,
+                      child: _isUploading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text('UPLOAD IMAGE', style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                ],
+              ),
           ],
-        )
-      )
+        ),
+      ),
     );
   }
 }

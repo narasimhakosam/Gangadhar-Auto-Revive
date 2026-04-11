@@ -10,8 +10,25 @@ class VehicleSearchNotifier extends StateNotifier<List<dynamic>> {
 
   Future<void> searchVehicles(String query) async {
     try {
-      final response = await apiClient.get('/vehicles', queryParameters: {'search': query});
-      state = response.data;
+      final data = await supabase
+          .from('vehicles')
+          .select()
+          .or('registration_number.ilike.%$query%,owner_name.ilike.%$query%,owner_phone.ilike.%$query%')
+          .order('created_at', ascending: false)
+          .limit(20);
+      state = data as List<dynamic>;
+    } catch (e) {
+      state = [];
+    }
+  }
+
+  Future<void> loadAll() async {
+    try {
+      final data = await supabase
+          .from('vehicles')
+          .select()
+          .order('created_at', ascending: false);
+      state = data as List<dynamic>;
     } catch (e) {
       state = [];
     }
@@ -19,6 +36,18 @@ class VehicleSearchNotifier extends StateNotifier<List<dynamic>> {
 }
 
 final vehicleDetailProvider = FutureProvider.family<Map<String, dynamic>, String>((ref, id) async {
-  final response = await apiClient.get('/vehicles/$id');
-  return response.data;
+  final data = await supabase
+      .from('vehicles')
+      .select('''
+        *,
+        visits (
+          *,
+          profiles ( name ),
+          parts ( * ),
+          visit_images ( * )
+        )
+      ''')
+      .eq('id', id)
+      .single();
+  return data as Map<String, dynamic>;
 });
